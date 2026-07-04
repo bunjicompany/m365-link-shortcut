@@ -1,0 +1,10 @@
+dist/
+obj/
+backups/
+*.log
+*.tmp
+*.user
+*.suo
+*.bak
+*.bak*
+*.myedits-*
