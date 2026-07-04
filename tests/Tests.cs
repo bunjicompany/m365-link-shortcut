@@ -88,6 +88,15 @@ namespace SharePointShortcutMaker
             AssertEqual("M365リンク", Program.GetSafeFileName("   "), "GetSafeFileName blank fallback");
         }
 
+        private static void TestDebugLogArguments()
+        {
+            AssertTrue(Program.IsTeamsDebugLogArg("--debug"), "IsTeamsDebugLogArg debug");
+            AssertTrue(Program.IsTeamsDebugLogArg("--debug-log"), "IsTeamsDebugLogArg debug-log");
+            AssertFalse(Program.IsTeamsDebugLogArg("--install"), "IsTeamsDebugLogArg install false");
+            AssertEqual("\"C:\\App\\M365LinkShortcut.exe\" \"%V\"", Program.BuildContextMenuCommand("C:\\App\\M365LinkShortcut.exe", "%V", false), "BuildContextMenuCommand default");
+            AssertEqual("\"C:\\App\\M365LinkShortcut.exe\" --debug \"%V\"", Program.BuildContextMenuCommand("C:\\App\\M365LinkShortcut.exe", "%V", true), "BuildContextMenuCommand debug");
+        }
+
         private static void TestSharePointKindExtensions()
         {
             AssertEqual(".xlsx", Program.GetExtensionFromOfficeOrSharePointKind("https://contoso.sharepoint.com/:x:/s/site/id?e=abc"), "SharePoint xlsx kind");
@@ -118,6 +127,7 @@ namespace SharePointShortcutMaker
             TestTeamsMeetingDateFallbackName();
             TestMojibakeRepair();
             TestSafeFileName();
+            TestDebugLogArguments();
             TestSharePointKindExtensions();
             TestSharePointFolderAndNameExtensions();
 

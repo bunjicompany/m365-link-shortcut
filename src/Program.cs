@@ -35,7 +35,7 @@ namespace SharePointShortcutMaker
         private const int ShcnfIdList = 0x0000;
         private const int SwShowMinNoActive = 7;
         private const int SwRestore = 9;
-        private static readonly bool TeamsDebugLogEnabled = false;
+        private static bool TeamsDebugLogEnabled = false;
         private static bool embeddedDependenciesInitialized;
         private static string embeddedFolderPath = string.Empty;
         private static readonly Dictionary<string, string> EmbeddedAssemblyResources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -98,6 +98,7 @@ namespace SharePointShortcutMaker
                 bool toggle = false;
                 bool install = false;
                 bool uninstall = false;
+                bool debugLog = false;
                 string targetPath = Environment.CurrentDirectory;
                 foreach (string arg in args)
                 {
@@ -113,6 +114,10 @@ namespace SharePointShortcutMaker
                     {
                         uninstall = true;
                     }
+                    else if (IsTeamsDebugLogArg(arg))
+                    {
+                        debugLog = true;
+                    }
                     else
                     {
                         hasTargetPath = true;
@@ -120,6 +125,7 @@ namespace SharePointShortcutMaker
                     }
                 }
 
+                TeamsDebugLogEnabled = debugLog;
                 toggle = !hasTargetPath && !install && !uninstall;
 
                 if (toggle)
@@ -138,7 +144,7 @@ namespace SharePointShortcutMaker
                     }
                     else
                     {
-                        InstallContextMenu();
+                        InstallContextMenu(debugLog);
                         if (!quiet)
                         {
                             MessageBox.Show(
@@ -169,7 +175,7 @@ namespace SharePointShortcutMaker
 
                 if (install)
                 {
-                    InstallContextMenu();
+                    InstallContextMenu(debugLog);
                     if (!quiet)
                     {
                         MessageBox.Show(
@@ -474,13 +480,31 @@ namespace SharePointShortcutMaker
             return false;
         }
 
-        private static void InstallContextMenu()
+        internal static bool IsTeamsDebugLogArg(string arg)
+        {
+            return string.Equals(arg, "--debug", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "--debug-log", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "--teams-debug-log", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string BuildContextMenuCommand(string exePath, string targetPlaceholder, bool debugLog)
+        {
+            string command = "\"" + exePath + "\" ";
+            if (debugLog)
+            {
+                command += "--debug ";
+            }
+
+            return command + "\"" + targetPlaceholder + "\"";
+        }
+
+        private static void InstallContextMenu(bool debugLog)
         {
             string exePath = Application.ExecutablePath;
             DeleteKeyIfExists(BackgroundShellKey);
             DeleteKeyIfExists(DirectoryShellKey);
-            RegisterMenuEntry(BackgroundShellKey, "\"" + exePath + "\" \"%V\"", exePath);
-            RegisterMenuEntry(DirectoryShellKey, "\"" + exePath + "\" \"%1\"", exePath);
+            RegisterMenuEntry(BackgroundShellKey, BuildContextMenuCommand(exePath, "%V", debugLog), exePath);
+            RegisterMenuEntry(DirectoryShellKey, BuildContextMenuCommand(exePath, "%1", debugLog), exePath);
             RefreshExplorerShell();
         }
 
