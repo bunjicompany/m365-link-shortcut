@@ -113,7 +113,7 @@ namespace SharePointShortcutMaker
             AssertFalse(Program.IsFolderSharePointUrl("https://contoso.sharepoint.com/:x:/s/site/id?e=abc"), "SharePoint file kind is not folder");
             AssertEqual(".xlsx", Program.GetExtensionFromNameOrUrl("テスト結果.xlsx", "https://contoso.sharepoint.com/:x:/s/site/id"), "Extension from base name xlsx");
             AssertEqual(".jpg", Program.GetExtensionFromNameOrUrl("写真.jpg", "https://contoso.sharepoint.com/:i:/s/site/id"), "Extension from base name jpg");
-            AssertEqual(".bat", Program.GetExtensionFromNameOrUrl("New重要データバックアップ.bat", "https://contoso.sharepoint.com/:u:/s/site/id"), "Extension from base name bat");
+            AssertEqual(".bat", Program.GetExtensionFromNameOrUrl("サンプルバックアップ.bat", "https://contoso.sharepoint.com/:u:/s/site/id"), "Extension from base name bat");
             AssertEqual(".pdf", Program.GetExtensionFromNameOrUrl("資料", "https://contoso.sharepoint.com/sites/site/Shared%20Documents/totori_family_trip_guide.pdf"), "Extension from URL path");
         }
 
