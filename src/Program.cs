@@ -422,8 +422,13 @@ namespace SharePointShortcutMaker
             public string LastTreeTeamCandidate { get; set; }
             public string Speaker { get; set; }
             public string LastSpeakerCandidate { get; set; }
+            public string TargetSpeakerCandidate { get; set; }
             public string Timestamp { get; set; }
             public bool HasTargetTimestamp { get; set; }
+            public bool HasTargetBody { get; set; }
+            public int ScanElementIndex { get; set; }
+            public int LastSpeakerCandidateIndex { get; set; }
+            public int TargetBodyElementIndex { get; set; }
 
             public bool HasShortcutName
             {

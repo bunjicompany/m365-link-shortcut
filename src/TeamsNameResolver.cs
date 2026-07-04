@@ -376,6 +376,11 @@ namespace SharePointShortcutMaker
                 return new TeamsTitleScanResult(string.Empty, bestFallbackName);
             }
 
+            if (chatPrefix && chatInfo != null)
+            {
+                FillTeamsChatTimestampFromTargetMessageId(chatInfo, debugLogPath);
+            }
+
             if (chatPrefix && chatInfo != null && chatInfo.HasShortcutName)
             {
                 string chatTitle = BuildTeamsChatShortcutTitle(chatInfo);
@@ -689,6 +694,46 @@ namespace SharePointShortcutMaker
             return match.Success ? match.Groups["id"].Value : string.Empty;
         }
 
+        private static void FillTeamsChatTimestampFromTargetMessageId(TeamsChatInfo chatInfo, string debugLogPath)
+        {
+            if (chatInfo == null
+                || string.IsNullOrWhiteSpace(chatInfo.TargetMessageId)
+                || !string.IsNullOrWhiteSpace(chatInfo.Timestamp))
+            {
+                return;
+            }
+
+            DateTime timestamp;
+            if (TryGetTeamsChatTimestampFromMessageId(chatInfo.TargetMessageId, out timestamp))
+            {
+                chatInfo.Timestamp = FormatDateTimeForJapaneseTitle(timestamp);
+                chatInfo.HasTargetTimestamp = true;
+                WriteTeamsDebugLog(debugLogPath, "chat timestampFromMessageId=" + ToLogValue(chatInfo.Timestamp));
+            }
+        }
+
+        internal static bool TryGetTeamsChatTimestampFromMessageId(string messageId, out DateTime value)
+        {
+            value = DateTime.MinValue;
+            long milliseconds;
+            if (string.IsNullOrWhiteSpace(messageId)
+                || !long.TryParse(messageId, out milliseconds)
+                || milliseconds < 946684800000L)
+            {
+                return false;
+            }
+
+            try
+            {
+                value = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).LocalDateTime;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static void UpdateTeamsChatInfo(
             TeamsChatInfo chatInfo,
             string rawName,
@@ -704,6 +749,7 @@ namespace SharePointShortcutMaker
                 return;
             }
 
+            chatInfo.ScanElementIndex++;
             UpdateTeamsChannelTeamFromTreeItem(chatInfo, rawName, controlType, localizedControlType, className, debugLogPath);
             UpdateTeamsChatNameFromRaw(chatInfo, rawName);
 
@@ -713,7 +759,12 @@ namespace SharePointShortcutMaker
                 && string.Equals(localizedControlType, "\u898b\u51fa\u3057", StringComparison.OrdinalIgnoreCase))
             {
                 chatInfo.LastSpeakerCandidate = speaker;
-                if (string.IsNullOrWhiteSpace(chatInfo.Speaker))
+                chatInfo.LastSpeakerCandidateIndex = chatInfo.ScanElementIndex;
+                if (!string.IsNullOrWhiteSpace(chatInfo.TargetMessageId))
+                {
+                    WriteTeamsDebugLog(debugLogPath, "chat speakerCandidateForTarget=" + ToLogValue(speaker));
+                }
+                else if (string.IsNullOrWhiteSpace(chatInfo.Speaker))
                 {
                     chatInfo.Speaker = speaker;
                     WriteTeamsDebugLog(debugLogPath, "chat speakerCandidate=" + ToLogValue(speaker));
@@ -734,12 +785,20 @@ namespace SharePointShortcutMaker
                     && string.Equals(id, chatInfo.TargetMessageId, StringComparison.OrdinalIgnoreCase);
                 if (targetBodyMatch)
                 {
+                    chatInfo.HasTargetBody = true;
+                    chatInfo.TargetBodyElementIndex = chatInfo.ScanElementIndex;
                     string bodySpeaker = ExtractTeamsChatSpeakerFromMessageBody(rawName);
                     if (!string.IsNullOrWhiteSpace(bodySpeaker))
                     {
                         chatInfo.Speaker = bodySpeaker;
                         chatInfo.LastSpeakerCandidate = bodySpeaker;
+                        chatInfo.TargetSpeakerCandidate = bodySpeaker;
                         WriteTeamsDebugLog(debugLogPath, "chat targetBodySpeaker=" + ToLogValue(bodySpeaker));
+                    }
+                    else if (IsRecentTeamsChatSpeakerCandidate(chatInfo))
+                    {
+                        chatInfo.TargetSpeakerCandidate = chatInfo.LastSpeakerCandidate;
+                        WriteTeamsDebugLog(debugLogPath, "chat targetBodyNearbySpeaker=" + ToLogValue(chatInfo.TargetSpeakerCandidate));
                     }
                 }
             }
@@ -754,11 +813,24 @@ namespace SharePointShortcutMaker
                 bool targetMatch = !string.IsNullOrWhiteSpace(chatInfo.TargetMessageId)
                     && string.Equals(id, chatInfo.TargetMessageId, StringComparison.OrdinalIgnoreCase);
 
+                if (!string.IsNullOrWhiteSpace(chatInfo.TargetMessageId) && !targetMatch)
+                {
+                    return;
+                }
+
                 if (targetMatch || string.IsNullOrWhiteSpace(chatInfo.Timestamp))
                 {
                     chatInfo.Timestamp = timestamp;
                     chatInfo.HasTargetTimestamp = targetMatch;
-                    if (!string.IsNullOrWhiteSpace(chatInfo.LastSpeakerCandidate))
+                    if (!string.IsNullOrWhiteSpace(chatInfo.TargetSpeakerCandidate))
+                    {
+                        chatInfo.Speaker = chatInfo.TargetSpeakerCandidate;
+                    }
+                    else if (targetMatch && IsRecentTeamsChatSpeakerCandidate(chatInfo))
+                    {
+                        chatInfo.Speaker = chatInfo.LastSpeakerCandidate;
+                    }
+                    else if (!targetMatch && !string.IsNullOrWhiteSpace(chatInfo.LastSpeakerCandidate))
                     {
                         chatInfo.Speaker = chatInfo.LastSpeakerCandidate;
                     }
@@ -771,6 +843,22 @@ namespace SharePointShortcutMaker
                         + ", speaker=" + ToLogValue(chatInfo.Speaker));
                 }
             }
+        }
+
+        private static bool IsRecentTeamsChatSpeakerCandidate(TeamsChatInfo chatInfo)
+        {
+            if (chatInfo == null
+                || string.IsNullOrWhiteSpace(chatInfo.LastSpeakerCandidate)
+                || chatInfo.LastSpeakerCandidateIndex <= 0)
+            {
+                return false;
+            }
+
+            int referenceIndex = chatInfo.HasTargetBody && chatInfo.TargetBodyElementIndex > 0
+                ? chatInfo.TargetBodyElementIndex
+                : chatInfo.ScanElementIndex;
+            int distance = Math.Abs(referenceIndex - chatInfo.LastSpeakerCandidateIndex);
+            return distance <= 25;
         }
 
         private static void UpdateTeamsChatNameFromRaw(TeamsChatInfo chatInfo, string rawValue)

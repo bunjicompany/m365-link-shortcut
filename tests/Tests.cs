@@ -61,6 +61,13 @@ namespace SharePointShortcutMaker
             AssertEqual("2026年7月3日(金)17時41分", Program.FormatDateTimeForJapaneseTitle(parsed), "FormatDateTimeForJapaneseTitle");
         }
 
+        private static void TestTeamsMessageIdTimestamp()
+        {
+            DateTime parsed;
+            AssertTrue(Program.TryGetTeamsChatTimestampFromMessageId("1783058499225", out parsed), "TryGetTeamsChatTimestampFromMessageId");
+            AssertEqual("2026年7月3日(金)15時1分", Program.FormatDateTimeForJapaneseTitle(parsed), "FormatDateTimeForJapaneseTitle from Teams message id");
+        }
+
         private static void TestTeamsMeetingDateFallbackName()
         {
             AssertEqual("Teams会議 【7月3日(金)16時00分-17時00分】", Program.GetTeamsMeetingDateFallbackName("7月3日金曜日 16:00–17:00JST"), "GetTeamsMeetingDateFallbackName long weekday");
@@ -107,6 +114,7 @@ namespace SharePointShortcutMaker
             TestTeamsLinkKinds();
             TestTeamsChannelName();
             TestTeamsTimestamp();
+            TestTeamsMessageIdTimestamp();
             TestTeamsMeetingDateFallbackName();
             TestMojibakeRepair();
             TestSafeFileName();
