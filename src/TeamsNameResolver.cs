@@ -273,7 +273,7 @@ namespace SharePointShortcutMaker
                     scanCondition);
 
                 int inspected = 0;
-                int maxInspect = isChannelChatLink ? 5000 : (meetingPrefix ? 1500 : (chatPrefix ? 900 : 500));
+                int maxInspect = isChannelChatLink ? 5000 : (meetingPrefix ? 1500 : (chatPrefix && !string.IsNullOrWhiteSpace(targetMessageId) ? 2500 : (chatPrefix ? 900 : 500)));
                 WriteTeamsDebugLog(debugLogPath, "element scan started. meetingPrefix=" + meetingPrefix + ", chatPrefix=" + chatPrefix + ", elementCount=" + elements.Count + ", maxInspect=" + maxInspect);
                 foreach (AutomationElement element in elements)
                 {
