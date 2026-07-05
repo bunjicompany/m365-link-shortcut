@@ -266,7 +266,9 @@ foreach ($oldDll in @(
 
 $licensePath = Join-Path $PSScriptRoot "LICENSE.txt"
 if (Test-Path -LiteralPath $licensePath) {
-    Copy-Item -LiteralPath $licensePath -Destination (Join-Path $distDir "LICENSE.txt") -Force
+    $licenseText = [System.IO.File]::ReadAllText($licensePath, [System.Text.Encoding]::UTF8)
+    $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+    [System.IO.File]::WriteAllText((Join-Path $distDir "LICENSE.txt"), $licenseText, $utf8Bom)
 }
 
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $exePath
