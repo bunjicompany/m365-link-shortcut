@@ -15,7 +15,7 @@ $meetingIconPath = Join-Path $PSScriptRoot "meeting.ico"
 $compilerPath = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $webView2Root = Join-Path $PSScriptRoot "vendor\WebView2"
 $appVersion = "1.0.0"
-$releaseDate = "2026-07-04"
+$releaseDate = "2026-07-05"
 
 if (-not (Test-Path -LiteralPath $compilerPath)) {
     $compilerPath = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe"
@@ -284,4 +284,3 @@ Update-ReleaseMetadata -Hash $hash.Hash
 
 Write-Host "exeを作成しました: $exePath"
 Write-Host "SHA-256: $($hash.Hash)"
-
