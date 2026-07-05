@@ -232,6 +232,7 @@ namespace SharePointShortcutMaker
             }
             catch (Exception ex)
             {
+                WriteAppDebugLog("Main", ex.ToString());
                 if (!HasQuietArg(args))
                 {
                     MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -409,7 +410,7 @@ namespace SharePointShortcutMaker
             public string SuggestedFallbackName { get; private set; }
         }
 
-        private sealed class TeamsChatInfo
+        internal sealed class TeamsChatInfo
         {
             public TeamsChatInfo(string targetMessageId, bool isChannelLink, string groupId, string teamName, string chatName)
             {
@@ -432,6 +433,8 @@ namespace SharePointShortcutMaker
             public string Timestamp { get; set; }
             public bool HasTargetTimestamp { get; set; }
             public bool HasTargetBody { get; set; }
+            public string TargetBodyRaw { get; set; }
+            public string DisplayPrefix { get; set; }
             public int ScanElementIndex { get; set; }
             public int LastSpeakerCandidateIndex { get; set; }
             public int TargetBodyElementIndex { get; set; }
@@ -567,8 +570,9 @@ namespace SharePointShortcutMaker
             {
                 SHChangeNotify(ShcneAssocChanged, ShcnfIdList, IntPtr.Zero, IntPtr.Zero);
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("RefreshExplorerShell", ex);
             }
         }
 

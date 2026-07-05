@@ -271,6 +271,13 @@ if (Test-Path -LiteralPath $licensePath) {
     [System.IO.File]::WriteAllText((Join-Path $distDir "LICENSE.txt"), $licenseText, $utf8Bom)
 }
 
+foreach ($batchName in @("Install-DebugMode.bat", "Install-NormalMode.bat")) {
+    $batchPath = Join-Path $PSScriptRoot $batchName
+    if (Test-Path -LiteralPath $batchPath) {
+        Copy-Item -LiteralPath $batchPath -Destination (Join-Path $distDir $batchName) -Force
+    }
+}
+
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $exePath
 Set-Content -LiteralPath (Join-Path $distDir "SHA256SUMS.txt") -Value ($hash.Hash + "  M365LinkShortcut.exe") -Encoding ASCII
 Update-ReleaseMetadata -Hash $hash.Hash

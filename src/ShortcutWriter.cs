@@ -142,8 +142,9 @@ namespace SharePointShortcutMaker
                 extension = Path.GetExtension(GetLastPathSegment(uri.AbsolutePath));
                 return string.IsNullOrWhiteSpace(extension) ? string.Empty : extension;
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("GetExtensionFromNameOrUrl", ex);
                 return string.Empty;
             }
         }
@@ -268,8 +269,9 @@ namespace SharePointShortcutMaker
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("IsFolderSharePointUrl", ex);
             }
 
             return false;
@@ -309,8 +311,9 @@ namespace SharePointShortcutMaker
                     return ParseIconLocation(rawIcon);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("GetAssociatedIcon", ex);
                 return null;
             }
         }
@@ -335,8 +338,9 @@ namespace SharePointShortcutMaker
                     return ParseIconLocation(rawIcon);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("GetProtocolIcon", ex);
                 return null;
             }
         }
@@ -356,8 +360,9 @@ namespace SharePointShortcutMaker
                     return ParseIconLocation(rawIcon);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("GetIconFromRegistryKey", ex);
                 return null;
             }
         }
@@ -412,10 +417,31 @@ namespace SharePointShortcutMaker
                 safeName = safeName.Replace(invalid, '_');
             }
 
-            safeName = safeName.Trim();
-            return string.IsNullOrWhiteSpace(safeName)
-                ? "M365\u30ea\u30f3\u30af"
-                : safeName;
+            safeName = safeName.Trim().TrimEnd('.', ' ');
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                return "M365\u30ea\u30f3\u30af";
+            }
+
+            if (IsReservedWindowsFileName(safeName))
+            {
+                string stem = Path.GetFileNameWithoutExtension(safeName);
+                string extension = Path.GetExtension(safeName);
+                safeName = stem + "_" + extension;
+            }
+
+            return safeName;
+        }
+
+        internal static bool IsReservedWindowsFileName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string stem = Path.GetFileNameWithoutExtension(name.Trim());
+            return Regex.IsMatch(stem, "^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", RegexOptions.IgnoreCase);
         }
 
         private static void CreateWindowsShortcut(string shortcutPath, string url, ShortcutIcon icon)
@@ -458,8 +484,73 @@ namespace SharePointShortcutMaker
             }
         }
 
+        private const int MaxShortcutBaseNameLength = 120;
+        private const int MaxShortcutPathLength = 259;
+        private const int UniqueSuffixReserve = 16;
+
+        internal static string TruncateBaseNameForPath(string directory, string baseName, string extension)
+        {
+            int budget = MaxShortcutBaseNameLength;
+            try
+            {
+                int directoryLength = Path.GetFullPath(directory).Length;
+                int extensionLength = string.IsNullOrEmpty(extension) ? 0 : extension.Length;
+                int pathBudget = MaxShortcutPathLength - directoryLength - 1 - extensionLength - UniqueSuffixReserve;
+                if (pathBudget < budget)
+                {
+                    budget = pathBudget;
+                }
+            }
+            catch
+            {
+            }
+
+            if (budget < 20)
+            {
+                budget = 20;
+            }
+
+            return TruncateBaseName(baseName, budget);
+        }
+
+        internal static string TruncateBaseName(string baseName, int maxLength)
+        {
+            if (string.IsNullOrEmpty(baseName) || baseName.Length <= maxLength)
+            {
+                return baseName;
+            }
+
+            string stem = Path.GetFileNameWithoutExtension(baseName);
+            string extension = Path.GetExtension(baseName);
+            if (string.IsNullOrEmpty(extension) || extension.Length > 12 || extension.Length >= maxLength)
+            {
+                stem = baseName;
+                extension = string.Empty;
+            }
+
+            int stemBudget = maxLength - extension.Length;
+            if (stem.Length > stemBudget)
+            {
+                stem = stem.Substring(0, stemBudget);
+                if (stem.Length > 0 && char.IsHighSurrogate(stem[stem.Length - 1]))
+                {
+                    stem = stem.Substring(0, stem.Length - 1);
+                }
+
+                stem = stem.TrimEnd(' ', '.');
+            }
+
+            if (string.IsNullOrWhiteSpace(stem))
+            {
+                return "M365リンク" + extension;
+            }
+
+            return stem + extension;
+        }
+
         private static string GetUniquePath(string directory, string baseName, string extension)
         {
+            baseName = TruncateBaseNameForPath(directory, baseName, extension);
             string candidate = Path.Combine(directory, baseName + extension);
             if (!File.Exists(candidate))
             {

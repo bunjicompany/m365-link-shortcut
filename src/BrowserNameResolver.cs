@@ -39,6 +39,7 @@ namespace SharePointShortcutMaker
             }
             catch (Exception ex)
             {
+                WriteAppDebugLog("GetNameFromBrowser", ex.ToString());
                 return new BrowserNameResult(string.Empty, "\u4e88\u671f\u3057\u306a\u3044\u30a8\u30e9\u30fc: " + ex.Message);
             }
         }
@@ -158,6 +159,7 @@ namespace SharePointShortcutMaker
                 }
                 catch (Exception ex)
                 {
+                    WriteAppDebugLog("BrowserNameResolverShown", ex.ToString());
                     this.failureReason = "WebView2\u306e\u521d\u671f\u5316\u306b\u5931\u6557\u3057\u307e\u3057\u305f: " + ex.Message;
                     this.Close();
                 }
@@ -175,8 +177,9 @@ namespace SharePointShortcutMaker
                         ssoProperty.SetValue(options, true, null);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    WriteAppDebugLog("CreateWebView2EnvironmentOptions", ex);
                 }
 
                 return options;
@@ -295,6 +298,7 @@ namespace SharePointShortcutMaker
                 }
                 catch (Exception ex)
                 {
+                    WriteAppDebugLog("TryResolveFromPage", ex.ToString());
                     this.failureReason = "\u30da\u30fc\u30b8\u5019\u88dc\u306e\u53d6\u5f97\u4e2d\u306b\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f: " + ex.Message;
                 }
                 finally

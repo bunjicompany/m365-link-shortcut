@@ -35,11 +35,23 @@ namespace SharePointShortcutMaker
             WriteTeamsDebugLog(debugLogPath, "targetMessageId=" + ToLogValue(targetMessageId));
             Dictionary<int, TeamsWindowInfo> beforeWindows = GetTeamsWindows();
             WriteTeamsDebugLog(debugLogPath, "beforeWindows=" + beforeWindows.Count);
+            List<string> beforeChatTitles = new List<string>();
             foreach (TeamsWindowInfo beforeWindow in beforeWindows.Values)
             {
                 if (TeamsDebugLogEnabled)
                 {
                     WriteTeamsDebugLog(debugLogPath, FormatTeamsWindowSummary("before", beforeWindow));
+                }
+
+                string beforeTitle = CleanTeamsBrowserTitleCandidate(GetNativeWindowTitle(beforeWindow.Handle));
+                if (string.IsNullOrWhiteSpace(beforeTitle))
+                {
+                    beforeTitle = CleanTeamsBrowserTitleCandidate(beforeWindow.Title);
+                }
+
+                if (!string.IsNullOrWhiteSpace(beforeTitle))
+                {
+                    beforeChatTitles.Add(beforeTitle);
                 }
             }
 
@@ -138,8 +150,32 @@ namespace SharePointShortcutMaker
                     WriteTeamsDebugLog(debugLogPath, "acceptedCandidateBeforeStableCheck=" + ToLogValue(title) + ", usable=" + IsUsableTeamsBrowserTitle(title) + ", builtChatTitle=" + builtChatTitle);
                     if (builtChatTitle)
                     {
-                        WriteTeamsDebugLog(debugLogPath, "selectedChatTitle=" + ToLogValue(title));
-                        return new TeamsAppNameResult(title, suggestedFallbackName);
+                        bool plainWholeChatLink = string.IsNullOrWhiteSpace(targetMessageId) && !IsTeamsChannelChatLink(url);
+                        if (!plainWholeChatLink)
+                        {
+                            WriteTeamsDebugLog(debugLogPath, "selectedChatTitle=" + ToLogValue(title));
+                            return new TeamsAppNameResult(title, suggestedFallbackName);
+                        }
+
+                        bool matchesBeforeWindow = MatchesPreLaunchChatTitle(beforeChatTitles, StripTeamsChatPrefix(title));
+                        if (string.Equals(title, lastAcceptedTitle, StringComparison.OrdinalIgnoreCase))
+                        {
+                            stableTitleCount++;
+                        }
+                        else
+                        {
+                            lastAcceptedTitle = title;
+                            stableTitleCount = 1;
+                        }
+
+                        WriteTeamsDebugLog(debugLogPath, "wholeChatTitleCandidate=" + ToLogValue(title) + ", stable=" + stableTitleCount + ", matchesBeforeWindow=" + matchesBeforeWindow + ", round=" + round);
+                        if (stableTitleCount >= 2 && (!matchesBeforeWindow || round >= 3))
+                        {
+                            WriteTeamsDebugLog(debugLogPath, "selectedChatTitle=" + ToLogValue(title));
+                            return new TeamsAppNameResult(title, suggestedFallbackName);
+                        }
+
+                        continue;
                     }
 
                     if (IsUsableTeamsBrowserTitle(title))
@@ -158,7 +194,7 @@ namespace SharePointShortcutMaker
                         {
                             WriteTeamsDebugLog(debugLogPath, "selectedTitle=" + ToLogValue(title));
                             CloseTeamsWindow(window);
-                            return new TeamsAppNameResult(AppendTeamsTitle(prefix, title), suggestedFallbackName);
+                            return new TeamsAppNameResult(AppendTeamsTitle(prefix, title, url), suggestedFallbackName);
                         }
                     }
                 }
@@ -168,6 +204,16 @@ namespace SharePointShortcutMaker
             {
                 WriteTeamsDebugLog(debugLogPath, "timeout. closing opened window.");
                 CloseTeamsWindow(openedWindow);
+            }
+
+            if (chatPrefix)
+            {
+                string urlFallbackTitle = BuildTeamsChannelUrlFallbackTitle(url);
+                if (!string.IsNullOrWhiteSpace(urlFallbackTitle))
+                {
+                    WriteTeamsDebugLog(debugLogPath, "channelUrlFallbackTitle=" + ToLogValue(urlFallbackTitle));
+                    return new TeamsAppNameResult(urlFallbackTitle, suggestedFallbackName);
+                }
             }
 
             WriteTeamsDebugLog(debugLogPath, "Teams title debug finished without title.");
@@ -219,6 +265,10 @@ namespace SharePointShortcutMaker
             }
 
             TeamsChatInfo chatInfo = chatPrefix ? new TeamsChatInfo(targetMessageId, isChannelChatLink, channelGroupId, channelTeamName, channelName) : null;
+            if (chatInfo != null)
+            {
+                chatInfo.DisplayPrefix = GetTeamsChatDisplayPrefix(sourceUrl);
+            }
             if (meetingPrefix)
             {
                 WriteTeamsDebugLog(debugLogPath, "meeting prefix detected. UI element scan will be logged for investigation, but element titles will not be auto-selected.");
@@ -323,7 +373,7 @@ namespace SharePointShortcutMaker
                             UpdateTeamsChatInfo(chatInfo, rawName, helpText, controlType, localizedControlType, automationId, className, debugLogPath);
                             if (chatInfo.HasWholeChatShortcutName && !isChannelChatLink)
                             {
-                                string chatTitle = BuildTeamsWholeChatShortcutTitle(GetTeamsChatDisplayName(chatInfo));
+                                string chatTitle = BuildTeamsWholeChatShortcutTitle(chatInfo.DisplayPrefix, GetTeamsChatDisplayName(chatInfo));
                                 WriteTeamsDebugLog(debugLogPath, "wholeChatShortcutTitle=" + ToLogValue(chatTitle));
                                 return new TeamsTitleScanResult(chatTitle, string.Empty);
                             }
@@ -390,7 +440,7 @@ namespace SharePointShortcutMaker
 
             if (chatPrefix && chatInfo != null && chatInfo.HasWholeChatShortcutName)
             {
-                string chatTitle = BuildTeamsWholeChatShortcutTitle(GetTeamsChatDisplayName(chatInfo));
+                string chatTitle = BuildTeamsWholeChatShortcutTitle(chatInfo.DisplayPrefix, GetTeamsChatDisplayName(chatInfo));
                 WriteTeamsDebugLog(debugLogPath, "wholeChatShortcutTitle fallback=" + ToLogValue(chatTitle));
                 return new TeamsTitleScanResult(chatTitle, string.Empty);
             }
@@ -677,10 +727,35 @@ namespace SharePointShortcutMaker
             return Regex.Replace(value, "^Teams\\s*\u30c1\u30e3\u30c3\u30c8\\s*[-_\u2013\u2014]\\s*", string.Empty, RegexOptions.IgnoreCase).Trim();
         }
 
+        internal static bool MatchesPreLaunchChatTitle(List<string> beforeTitles, string chatName)
+        {
+            if (beforeTitles == null || string.IsNullOrWhiteSpace(chatName))
+            {
+                return false;
+            }
+
+            foreach (string beforeTitle in beforeTitles)
+            {
+                if (!string.IsNullOrWhiteSpace(beforeTitle)
+                    && beforeTitle.IndexOf(chatName.Trim(), StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static bool IsBuiltTeamsChatShortcutTitle(string title)
         {
-            return !string.IsNullOrWhiteSpace(title)
-                && title.StartsWith("Teams\u30c1\u30e3\u30c3\u30c8 \u3010", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return false;
+            }
+
+            return title.StartsWith("Teams\u30c1\u30e3\u30c3\u30c8 \u3010", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("Teams\u6295\u7a3f \u3010", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("Teams\u4f1a\u8b70\u30c1\u30e3\u30c3\u30c8 \u3010", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string GetTeamsMessageId(string url)
@@ -712,6 +787,37 @@ namespace SharePointShortcutMaker
             }
         }
 
+        internal static string BuildTeamsChannelUrlFallbackTitle(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url) || !IsTeamsChatLink(url) || !IsTeamsChannelChatLink(url))
+            {
+                return string.Empty;
+            }
+
+            string channelName = GetTeamsChannelNameFromUrl(url);
+            if (string.IsNullOrWhiteSpace(channelName))
+            {
+                return string.Empty;
+            }
+
+            string displayName = channelName.Trim();
+            string teamName = GetTeamsChannelTeamNameFromUrlOrCache(url);
+            if (!string.IsNullOrWhiteSpace(teamName)
+                && !string.Equals(teamName.Trim(), displayName, StringComparison.OrdinalIgnoreCase))
+            {
+                displayName = teamName.Trim() + " - " + displayName;
+            }
+
+            string title = GetTeamsChatDisplayPrefix(url) + " 【" + displayName + "】";
+            DateTime timestamp;
+            if (TryGetTeamsChatTimestampFromMessageId(GetTeamsMessageId(url), out timestamp))
+            {
+                title += " " + FormatDateTimeForJapaneseTitle(timestamp);
+            }
+
+            return title;
+        }
+
         internal static bool TryGetTeamsChatTimestampFromMessageId(string messageId, out DateTime value)
         {
             value = DateTime.MinValue;
@@ -734,7 +840,7 @@ namespace SharePointShortcutMaker
             }
         }
 
-        private static void UpdateTeamsChatInfo(
+        internal static void UpdateTeamsChatInfo(
             TeamsChatInfo chatInfo,
             string rawName,
             string helpText,
@@ -787,6 +893,7 @@ namespace SharePointShortcutMaker
                 {
                     chatInfo.HasTargetBody = true;
                     chatInfo.TargetBodyElementIndex = chatInfo.ScanElementIndex;
+                    chatInfo.TargetBodyRaw = rawName ?? string.Empty;
                     string bodySpeaker = ExtractTeamsChatSpeakerFromMessageBody(rawName);
                     if (!string.IsNullOrWhiteSpace(bodySpeaker))
                     {
@@ -800,6 +907,30 @@ namespace SharePointShortcutMaker
                         chatInfo.TargetSpeakerCandidate = chatInfo.LastSpeakerCandidate;
                         WriteTeamsDebugLog(debugLogPath, "chat targetBodyNearbySpeaker=" + ToLogValue(chatInfo.TargetSpeakerCandidate));
                     }
+                }
+            }
+
+            if (chatInfo.HasTargetBody
+                && !string.IsNullOrWhiteSpace(chatInfo.TargetBodyRaw)
+                && string.Equals(controlType, "ControlType.Text", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(rawName)
+                && chatInfo.ScanElementIndex - chatInfo.TargetBodyElementIndex <= 25)
+            {
+                string prefixSpeaker = rawName.Trim();
+                bool canAdopt = string.IsNullOrWhiteSpace(chatInfo.TargetSpeakerCandidate)
+                    || (prefixSpeaker.Length > chatInfo.TargetSpeakerCandidate.Length
+                        && prefixSpeaker.StartsWith(chatInfo.TargetSpeakerCandidate, StringComparison.Ordinal));
+                if (canAdopt
+                    && prefixSpeaker.Length >= 2
+                    && prefixSpeaker.Length <= 80
+                    && chatInfo.TargetBodyRaw.Length > prefixSpeaker.Length
+                    && chatInfo.TargetBodyRaw.StartsWith(prefixSpeaker, StringComparison.Ordinal))
+                {
+                    chatInfo.Speaker = prefixSpeaker;
+                    chatInfo.TargetSpeakerCandidate = prefixSpeaker;
+                    chatInfo.LastSpeakerCandidate = prefixSpeaker;
+                    chatInfo.LastSpeakerCandidateIndex = chatInfo.ScanElementIndex;
+                    WriteTeamsDebugLog(debugLogPath, "chat targetBodyPrefixSpeaker=" + ToLogValue(prefixSpeaker));
                 }
             }
 
@@ -1267,7 +1398,8 @@ namespace SharePointShortcutMaker
                 timestamp = chatInfo.Timestamp.Trim();
             }
 
-            return "Teams\u30c1\u30e3\u30c3\u30c8 \u3010"
+            return GetTeamsChatTitlePrefix(chatInfo.DisplayPrefix)
+                + " \u3010"
                 + GetTeamsChatDisplayName(chatInfo)
                 + "\u3011 "
                 + timestamp
@@ -1275,14 +1407,19 @@ namespace SharePointShortcutMaker
                 + chatInfo.Speaker.Trim();
         }
 
-        private static string BuildTeamsWholeChatShortcutTitle(string chatName)
+        private static string GetTeamsChatTitlePrefix(string displayPrefix)
+        {
+            return string.IsNullOrWhiteSpace(displayPrefix) ? "Teams\u30c1\u30e3\u30c3\u30c8" : displayPrefix.Trim();
+        }
+
+        private static string BuildTeamsWholeChatShortcutTitle(string displayPrefix, string chatName)
         {
             if (string.IsNullOrWhiteSpace(chatName))
             {
                 return string.Empty;
             }
 
-            return "Teams\u30c1\u30e3\u30c3\u30c8 \u3010" + chatName.Trim() + "\u3011";
+            return GetTeamsChatTitlePrefix(displayPrefix) + " \u3010" + chatName.Trim() + "\u3011";
         }
 
         private static string GetTeamsChatDisplayName(TeamsChatInfo chatInfo)
@@ -1956,7 +2093,7 @@ namespace SharePointShortcutMaker
             return candidate;
         }
 
-        private static bool IsUsableTeamsBrowserTitle(string value)
+        internal static bool IsUsableTeamsBrowserTitle(string value)
         {
             if (!IsUsableTitleCandidate(value))
             {
@@ -1964,7 +2101,13 @@ namespace SharePointShortcutMaker
             }
 
             string candidate = value.Trim();
-            if (Regex.IsMatch(candidate, "^(?:Microsoft Teams|Microsoft Teams\\s+\\u4f1a\\u8b70|Teams|Teams\\s+\\u4f1a\\u8b70|M365|Office|Loading|\\u8aad\\u307f\\u8fbc\\u307f\\u4e2d|\\u30b5\\u30a4\\u30f3\\u30a4\\u30f3|\\u30ed\\u30b0\\u30a4\\u30f3|Sign in|Join meeting|\\u4f1a\\u8b70\\u306b\\u53c2\\u52a0|\\u53c2\\u52a0|\\u30c1\\u30e3\\u30c3\\u30c8|\\u4f1a\\u8b70|\\u4e88\\u5b9a\\u8868|Calendar|Chat|Activity)$", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(candidate, "^(?:Microsoft Teams|Microsoft Teams\\s+\\u4f1a\\u8b70|Teams|Teams\\s+\\u4f1a\\u8b70|M365|Office|Loading|\\u8aad\\u307f\\u8fbc\\u307f\\u4e2d|\\u30b5\\u30a4\\u30f3\\u30a4\\u30f3|\\u30ed\\u30b0\\u30a4\\u30f3|Sign in|Join meeting|\\u4f1a\\u8b70\\u306b\\u53c2\\u52a0|\\u53c2\\u52a0|\\u30c1\\u30e3\\u30c3\\u30c8|\\u4f1a\\u8b70|\\u4e88\\u5b9a\\u8868|Calendar|Chat|Activity|\\u30c1\\u30fc\\u30e0\\u3068\\u30c1\\u30e3\\u30cd\\u30eb|\\u30a2\\u30af\\u30c6\\u30a3\\u30d3\\u30c6\\u30a3|\\u901a\\u8a71|\\u30d5\\u30a1\\u30a4\\u30eb|\\u30ab\\u30ec\\u30f3\\u30c0\\u30fc|\\u30a2\\u30d7\\u30ea|Teams and channels|Calls|Files|Apps|OneDrive)$", RegexOptions.IgnoreCase))
+            {
+                return false;
+            }
+
+            if (candidate.StartsWith("チームとチャネル", StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith("Teams and channels", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }

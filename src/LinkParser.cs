@@ -105,7 +105,17 @@ namespace SharePointShortcutMaker
             }
 
             string cleaned = CleanUrlCandidate(url);
-            return Regex.IsMatch(cleaned, "(?:/l/message/|/l/chat/|/chat/|/l/channel/|/channel/|[?&]chatId=)", RegexOptions.IgnoreCase);
+            return Regex.IsMatch(cleaned, "(?:/l/message/|/l/chat/|/chat/|/l/channel/|/channel/|/l/team/|[?&]chatId=)", RegexOptions.IgnoreCase);
+        }
+
+        internal static bool IsTeamsTeamLink(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(CleanUrlCandidate(url), "/l/team/", RegexOptions.IgnoreCase);
         }
 
         internal static bool IsTeamsMeetingLink(string url)
@@ -206,8 +216,9 @@ namespace SharePointShortcutMaker
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("ReadTeamsChannelTeamNameCache", ex);
             }
 
             return string.Empty;
@@ -246,8 +257,9 @@ namespace SharePointShortcutMaker
 
                 File.WriteAllLines(path, lines.ToArray(), Encoding.UTF8);
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("SaveTeamsChannelTeamNameCache", ex);
             }
         }
 
@@ -354,10 +366,10 @@ namespace SharePointShortcutMaker
             string decoded = HttpUtility.HtmlDecode(value);
             decoded = Regex.Replace(decoded, "<[^>]+>", " ");
             decoded = Regex.Replace(decoded, "\\s+", " ").Trim();
-            return decoded;
+            return RepairUtf8AsShiftJisMojibake(decoded);
         }
 
-        private static bool IsUsableTitleCandidate(string value)
+        internal static bool IsUsableTitleCandidate(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -366,6 +378,11 @@ namespace SharePointShortcutMaker
 
             string candidate = value.Trim();
             if (candidate.Length < 2 || candidate.Length > 120)
+            {
+                return false;
+            }
+
+            if (candidate.IndexOf('�') >= 0 || LooksLikeUtf8AsShiftJisMojibake(candidate))
             {
                 return false;
             }
@@ -450,8 +467,9 @@ namespace SharePointShortcutMaker
                     Uri uri = new Uri(teamsUrl);
                     return "msteams://" + uri.Host + uri.PathAndQuery + uri.Fragment;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    WriteAppDebugLog("GetTeamsLaunchUrl", ex);
                     return teamsUrl;
                 }
             }
@@ -473,8 +491,9 @@ namespace SharePointShortcutMaker
                     return key != null && key.GetValue("URL Protocol") != null;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                WriteAppDebugLog("IsProtocolRegistered", ex);
                 return false;
             }
         }
@@ -534,6 +553,14 @@ namespace SharePointShortcutMaker
                             teamsManualFallbackName,
                             "\u4f1a\u8b70\u540d\u3092Teams\u306e\u5de6\u4e0a\u30bf\u30a4\u30c8\u30eb\u304b\u3089\u53d6\u5f97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002");
                     }
+
+                    if (IsTeamsTeamLink(url) && !IsBuiltTeamsChatShortcutTitle(teamsFallbackName))
+                    {
+                        return GetShortcutNameFromUserInputOrFallback(
+                            quiet,
+                            teamsFallbackName,
+                            "\u30c1\u30fc\u30e0\u306e\u30ea\u30f3\u30af\u304b\u3089\u30c1\u30fc\u30e0\u540d\u3068\u30c1\u30e3\u30cd\u30eb\u540d\u3092\u53d6\u5f97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002");
+                    }
                 }
 
                 return teamsFallbackName;
@@ -565,15 +592,40 @@ namespace SharePointShortcutMaker
             string cleaned = CleanUrlCandidate(url);
             if (Regex.IsMatch(cleaned, "(?:/meetup-join/|/meet/|[?&]meetingId=)", RegexOptions.IgnoreCase))
             {
-                return AppendTeamsTitle("Teams \u4f1a\u8b70", titleCandidate);
+                return AppendTeamsTitle("Teams \u4f1a\u8b70", titleCandidate, url);
             }
 
-            if (Regex.IsMatch(cleaned, "(?:/l/message/|/l/chat/|/chat/|[?&]chatId=)", RegexOptions.IgnoreCase))
+            if (IsTeamsChatLink(cleaned))
             {
-                return AppendTeamsTitle("Teams \u30c1\u30e3\u30c3\u30c8", titleCandidate);
+                return AppendTeamsTitle("Teams \u30c1\u30e3\u30c3\u30c8", titleCandidate, url);
             }
 
-            return AppendTeamsTitle("Teams \u30ea\u30f3\u30af", titleCandidate);
+            return AppendTeamsTitle("Teams \u30ea\u30f3\u30af", titleCandidate, url);
+        }
+
+        internal static bool IsTeamsMeetingChatLink(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(CleanUrlCandidate(url), "19(?::|%3A)meeting_", RegexOptions.IgnoreCase);
+        }
+
+        internal static string GetTeamsChatDisplayPrefix(string url)
+        {
+            if (IsTeamsChannelChatLink(url))
+            {
+                return "Teams\u6295\u7a3f";
+            }
+
+            if (IsTeamsMeetingChatLink(url))
+            {
+                return "Teams\u4f1a\u8b70\u30c1\u30e3\u30c3\u30c8";
+            }
+
+            return "Teams\u30c1\u30e3\u30c3\u30c8";
         }
 
         private static string GetTeamsShortcutPrefix(string url)
@@ -592,12 +644,12 @@ namespace SharePointShortcutMaker
             return "Teams \u30ea\u30f3\u30af";
         }
 
-        private static string AppendTeamsTitle(string prefix, string titleCandidate)
+        private static string AppendTeamsTitle(string prefix, string titleCandidate, string url)
         {
             string title = CleanTeamsBrowserTitleCandidate(titleCandidate);
             if (!IsUsableTitleCandidate(title))
             {
-                return prefix;
+                return IsTeamsChatPrefix(prefix) ? GetTeamsChatDisplayPrefix(url) : prefix;
             }
 
             if (IsTeamsMeetingPrefix(prefix))
@@ -611,9 +663,10 @@ namespace SharePointShortcutMaker
             if (IsTeamsChatPrefix(prefix))
             {
                 title = StripTeamsChatPrefix(title);
+                string displayPrefix = GetTeamsChatDisplayPrefix(url);
                 return string.IsNullOrWhiteSpace(title)
-                    ? "Teams\u30c1\u30e3\u30c3\u30c8"
-                    : BuildTeamsWholeChatShortcutTitle(title);
+                    ? displayPrefix
+                    : BuildTeamsWholeChatShortcutTitle(displayPrefix, title);
             }
 
             if (title.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
@@ -632,7 +685,7 @@ namespace SharePointShortcutMaker
                 string title = CleanTeamsBrowserTitleCandidate(rawLine);
                 if (IsUsableTeamsBrowserTitle(title))
                 {
-                    return AppendTeamsTitle(prefix, title);
+                    return AppendTeamsTitle(prefix, title, url);
                 }
             }
 
